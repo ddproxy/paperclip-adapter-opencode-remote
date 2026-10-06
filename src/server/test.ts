@@ -7,14 +7,6 @@ import { OpencodeHttpError, OpencodeUnreachableError } from "../client.js";
 import { ConfigError, parseConfig } from "../config.js";
 import { defaultClientFactory, type ClientFactory } from "./execute.js";
 
-const isLocalHost = (host: string) =>
-  host === "localhost" ||
-  host === "127.0.0.1" ||
-  host === "::1" ||
-  /^10\./.test(host) ||
-  /^192\.168\./.test(host) ||
-  /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-
 export async function testEnvironmentWithClient(
   ctx: AdapterEnvironmentTestContext,
   makeClient: ClientFactory = defaultClientFactory,
@@ -41,12 +33,12 @@ export async function testEnvironmentWithClient(
   }
 
   const url = new URL(cfg.baseUrl);
-  if (url.protocol === "http:" && !isLocalHost(url.hostname)) {
+  if (url.protocol === "http:" && !/^(localhost|::1|\[::1\]|127(\.\d{1,3}){3})$/i.test(url.hostname)) {
     checks.push({
       code: "opencode_remote_insecure_transport",
       level: "warn",
       message: `baseUrl uses plain http to ${url.hostname}`,
-      hint: "Credentials and prompts cross the network unencrypted; use https or a private network.",
+      hint: "dangerouslyAllowInsecureRemoteHttp is on: credentials and prompts cross the network unencrypted.",
     });
   }
 

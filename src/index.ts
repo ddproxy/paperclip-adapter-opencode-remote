@@ -9,7 +9,7 @@ Use when: the agent should run on an existing \`opencode serve\` instance on ano
 Don't use when: opencode should run inside the Paperclip pod (use opencode_local).
 
 Fields:
-- baseUrl (required): server URL, e.g. https://opencode-ct1.example.net
+- baseUrl (required): https URL of the server, e.g. https://opencode-ct1.example.net (remote plain http is refused unless dangerouslyAllowInsecureRemoteHttp is true)
 - serverPassword (required, secret): the server's OPENCODE_SERVER_PASSWORD
 - username: basic-auth user, default "opencode"
 - model: optional provider/model, e.g. opencode/big-pickle

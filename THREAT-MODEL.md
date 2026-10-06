@@ -9,7 +9,7 @@ Design: Paperclip (cluster pod) calls `opencode serve` on a dev container over H
 4. **Run token in the prompt.** The run-scoped Paperclip token is sent in the prompt (`sendRunToken`) and persists in session history on the CT. Mitigation: it is short-lived and run-scoped; set `sendRunToken: false` for agents that never call Paperclip back.
 5. **Secrets in logs.** Streamed tool input and output go to Paperclip run logs. The adapter never logs the server password, but the agent could print a secret. Mitigation: treat run logs as sensitive; truncate tool input (done at 400 chars).
 6. **Abort and DoS.** A stuck run holds the remote session. The adapter interrupts on cancel and timeout (`timeoutSec`), waits 5 s, then returns anyway; set a timeout for every agent. A flood of runs can exhaust the CT; rely on Paperclip concurrency limits per agent.
-7. **Plain http.** `testEnvironment` warns when a non-private host is reached over http. Required: https for anything off a private network.
+7. **Plain http.** Remote plain http is refused unless `dangerouslyAllowInsecureRemoteHttp` is set (loopback is always allowed), matching `hermes_gateway`. Leave the flag off outside local development.
 
 ## Required before first use
 Items 1 and 7, and a decision on 3 for each CT. Items 2 and 4 are configuration choices, not code.

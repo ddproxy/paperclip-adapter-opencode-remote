@@ -10,6 +10,7 @@ export interface RemoteConfig {
   sendRunToken: boolean;
   paperclipApiUrl: string;
   promptTemplate: string | null;
+  instructionsFilePath: string | null;
 }
 
 export class ConfigError extends Error {
@@ -32,6 +33,12 @@ export function parseConfig(config: Record<string, unknown>): RemoteConfig {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new ConfigError("baseUrl must be http or https");
+  }
+  const loopback = /^(localhost|::1|\[::1\]|127(\.\d{1,3}){3})$/i.test(url.hostname);
+  if (url.protocol === "http:" && !loopback && config.dangerouslyAllowInsecureRemoteHttp !== true) {
+    throw new ConfigError(
+      `baseUrl uses remote plain HTTP for "${url.hostname}". Use HTTPS, or set dangerouslyAllowInsecureRemoteHttp=true only for unsafe local development.`,
+    );
   }
   const serverPassword = str(config.serverPassword);
   if (!serverPassword) throw new ConfigError("serverPassword is required");
@@ -59,5 +66,6 @@ export function parseConfig(config: Record<string, unknown>): RemoteConfig {
     sendRunToken: config.sendRunToken !== false,
     paperclipApiUrl: str(config.paperclipApiUrl) ?? process.env.PAPERCLIP_API_URL ?? "",
     promptTemplate: str(config.promptTemplate),
+    instructionsFilePath: str(config.instructionsFilePath),
   };
 }

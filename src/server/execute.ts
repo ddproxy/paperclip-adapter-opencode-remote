@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import {
   HttpOpencodeClient,
@@ -16,8 +17,25 @@ export const defaultClientFactory: ClientFactory = (cfg) =>
 
 const CANCEL_SETTLE_MS = 5_000;
 
+function familyFor(code: string, message: string): AdapterExecutionResult["errorFamily"] {
+  if (code === "rate_limited") {
+    return /usage exceeded|quota|subscribe/i.test(message) ? "provider_quota" : "transient_upstream";
+  }
+  if (code === "unreachable" || code === "stream_closed" || code === "stream_error") return "transient_upstream";
+  if (code === "remote_http_error" && /HTTP 5\d\d/.test(message)) return "transient_upstream";
+  return null;
+}
+
 function failure(errorCode: string, errorMessage: string, extra: Partial<AdapterExecutionResult> = {}): AdapterExecutionResult {
-  return { exitCode: 1, signal: null, timedOut: false, errorCode, errorMessage, ...extra };
+  return {
+    exitCode: 1,
+    signal: null,
+    timedOut: false,
+    errorCode,
+    errorMessage,
+    errorFamily: familyFor(errorCode, errorMessage),
+    ...extra,
+  };
 }
 
 function classifyError(err: unknown): AdapterExecutionResult {
@@ -71,6 +89,31 @@ export async function executeWithClient(
     return classifyError(err);
   }
   await log("stdout", `[opencode_remote] ${resumed ? "resumed" : "created"} session ${sessionId} on ${cfg.baseUrl}\n`);
+
+  let instructions: string | null = null;
+  if (cfg.instructionsFilePath) {
+    try {
+      const contents = (await readFile(cfg.instructionsFilePath, "utf8")).trim();
+      if (contents) {
+        instructions = `${contents}\n\nThe above agent instructions were loaded from ${cfg.instructionsFilePath} on the Paperclip host; files they reference are not available on this machine.`;
+        await log("stdout", `[opencode_remote] loaded agent instructions from ${cfg.instructionsFilePath}\n`);
+      }
+    } catch (err) {
+      await log(
+        "stderr",
+        `[opencode_remote] could not read instructions file "${cfg.instructionsFilePath}": ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+  const promptText = buildPrompt(ctx, cfg, { resumed, instructions });
+  await ctx.onMeta?.({
+    adapterType: "opencode_remote",
+    command: cfg.baseUrl,
+    commandNotes: [`${resumed ? "Resumed" : "Created"} remote session ${sessionId}`],
+    prompt: promptText,
+    promptMetrics: { promptChars: promptText.length, instructionsChars: instructions?.length ?? 0 },
+    context: ctx.context,
+  });
 
   const streamAbort = new AbortController();
   let events: AsyncIterable<OpencodeEvent>;
@@ -214,7 +257,7 @@ export async function executeWithClient(
       await stop("cancelled");
     } else {
       try {
-        await client.prompt(sessionId, buildPrompt(ctx, cfg));
+        await client.prompt(sessionId, promptText);
       } catch (err) {
         streamAbort.abort();
         await consume;
@@ -264,7 +307,13 @@ export async function executeWithClient(
     };
   }
   if (state.failure) {
-    return { ...base, exitCode: 1, errorCode: state.failure.code, errorMessage: state.failure.message };
+    return {
+      ...base,
+      exitCode: 1,
+      errorCode: state.failure.code,
+      errorMessage: state.failure.message,
+      errorFamily: familyFor(state.failure.code, state.failure.message),
+    };
   }
   return base;
 }
