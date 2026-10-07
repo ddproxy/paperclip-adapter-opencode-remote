@@ -24,7 +24,7 @@ function makeCtx(overrides: Partial<AdapterExecutionContext> & { config?: Record
     runId: "run-1",
     agent: { id: "agent-1", companyId: "co-1", name: "Tester", adapterType: "opencode_remote", adapterConfig: {} },
     runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
-    config: { baseUrl: mock.url, serverPassword: mock.password, ...config },
+    config: { baseUrl: mock.url, serverPassword: mock.password, allowPrivateNetwork: true, ...config },
     context: { issue: { identifier: "WES-1", title: "Do the thing" } },
     onLog: async (stream: "stdout" | "stderr", chunk: string) => {
       logs.push([stream, chunk]);
@@ -232,16 +232,18 @@ describe("testEnvironmentWithClient", () => {
   it("passes against a healthy server and reports the version", async () => {
     const result = await testEnvironmentWithClient({
       ...base(),
-      config: { baseUrl: mock.url, serverPassword: mock.password },
+      config: { baseUrl: mock.url, serverPassword: mock.password, allowPrivateNetwork: true },
     });
-    expect(result.status).toBe("pass");
+    // The mock runs on loopback, so the run opts in to private targets and the check warns about it.
+    expect(result.status).toBe("warn");
+    expect(result.checks.some((c) => c.code === "opencode_remote_private_network_allowed")).toBe(true);
     expect(result.checks.some((c) => c.message.includes("1.18.33"))).toBe(true);
   });
 
   it("fails on bad credentials", async () => {
     const result = await testEnvironmentWithClient({
       ...base(),
-      config: { baseUrl: mock.url, serverPassword: "nope" },
+      config: { baseUrl: mock.url, serverPassword: "nope", allowPrivateNetwork: true },
     });
     expect(result.status).toBe("fail");
     expect(result.checks.some((c) => c.code === "opencode_remote_auth_failed")).toBe(true);
@@ -313,10 +315,15 @@ describe("compatibility with Paperclip's adapter contract", () => {
 
   it("prefixes agent instructions read from instructionsFilePath", async () => {
     const dir = mkdtempSync(join(tmpdir(), "oc-remote-"));
+    process.env.PAPERCLIP_HOME = dir;
     const file = join(dir, "AGENTS.md");
     writeFileSync(file, "Always answer in haiku.");
     const { ctx } = makeCtx({ config: { instructionsFilePath: file } });
-    await executeWithClient(ctx);
+    try {
+      await executeWithClient(ctx);
+    } finally {
+      delete process.env.PAPERCLIP_HOME;
+    }
     const prompt = JSON.stringify(mock.requests.find((r) => r.path.endsWith("/prompt"))?.body);
     expect(prompt).toContain("Always answer in haiku.");
   });

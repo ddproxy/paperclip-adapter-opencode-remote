@@ -16,6 +16,7 @@ Fields:
 - agent: optional opencode agent name
 - directory: optional working directory on the remote host for new sessions
 - timeoutSec: optional wall-clock limit, default none
+- allowPrivateNetwork: permit loopback, private and link-local targets (default false; an SSRF guard refuses them otherwise)
 - autoApprove: approve tool permission requests automatically (default false: the run fails instead)
 - sendRunToken: include the run-scoped Paperclip API token in the prompt (default true)
 - paperclipApiUrl: Paperclip base URL the remote agent should call

@@ -1,7 +1,7 @@
 # Notes
 
 ## Status
-`opencode_remote` adapter plugin: builds (`npm run build`) and passes its tests (`npm test`, 29 tests against an in-process mock server). See `COMPARISON.md` for how it lines up with Paperclip's built-in adapters. Not yet installed in Paperclip or run against a real remote server.
+`opencode_remote` adapter plugin: builds (`npm run build`) and passes its tests (`npm test`, 37 tests against an in-process mock server). See `COMPARISON.md` for how it lines up with Paperclip's built-in adapters. Not yet installed in Paperclip or run against a real remote server.
 
 ## Verified
 - Against a live `opencode serve` 1.18.18 (local, throwaway, no model calls): `GET /global/health` returns `{healthy, version}`; HTTP basic auth with user `opencode` (bad password gives 401); `POST /api/session` and `GET /api/session/{id}` behave as in the spec; `GET /api/event` is SSE and the parser reads its frames; `POST .../interrupt` on an idle session succeeds.

@@ -4,6 +4,7 @@ import type {
   AdapterEnvironmentTestResult,
 } from "@paperclipai/adapter-utils";
 import { OpencodeHttpError, OpencodeUnreachableError } from "../client.js";
+import { NetworkGuardError } from "../net-guard.js";
 import { ConfigError, parseConfig } from "../config.js";
 import { defaultClientFactory, type ClientFactory } from "./execute.js";
 
@@ -42,6 +43,15 @@ export async function testEnvironmentWithClient(
     });
   }
 
+  if (cfg.allowPrivateNetwork) {
+    checks.push({
+      code: "opencode_remote_private_network_allowed",
+      level: "warn",
+      message: "allowPrivateNetwork is on: loopback, private and link-local targets are reachable from the Paperclip server",
+      hint: "Leave it off unless the opencode server is on a private network you control.",
+    });
+  }
+
   try {
     const health = await makeClient(cfg).health();
     if (!health.healthy) {
@@ -54,7 +64,14 @@ export async function testEnvironmentWithClient(
       });
     }
   } catch (err) {
-    if (err instanceof OpencodeHttpError && err.status === 401) {
+    if (err instanceof NetworkGuardError) {
+      checks.push({
+        code: "opencode_remote_blocked_network",
+        level: "error",
+        message: err.message,
+        hint: "Use a public HTTPS hostname, or set allowPrivateNetwork for a server on a private network.",
+      });
+    } else if (err instanceof OpencodeHttpError && err.status === 401) {
       checks.push({
         code: "opencode_remote_auth_failed",
         level: "error",

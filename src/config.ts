@@ -11,6 +11,7 @@ export interface RemoteConfig {
   paperclipApiUrl: string;
   promptTemplate: string | null;
   instructionsFilePath: string | null;
+  allowPrivateNetwork: boolean;
 }
 
 export class ConfigError extends Error {
@@ -67,5 +68,6 @@ export function parseConfig(config: Record<string, unknown>): RemoteConfig {
     paperclipApiUrl: str(config.paperclipApiUrl) ?? process.env.PAPERCLIP_API_URL ?? "",
     promptTemplate: str(config.promptTemplate),
     instructionsFilePath: str(config.instructionsFilePath),
+    allowPrivateNetwork: config.allowPrivateNetwork === true,
   };
 }

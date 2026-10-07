@@ -11,6 +11,14 @@ Design: Paperclip (cluster pod) calls `opencode serve` on a dev container over H
 6. **Abort and DoS.** A stuck run holds the remote session. The adapter interrupts on cancel and timeout (`timeoutSec`), waits 5 s, then returns anyway; set a timeout for every agent. A flood of runs can exhaust the CT; rely on Paperclip concurrency limits per agent.
 7. **Plain http.** Remote plain http is refused unless `dangerouslyAllowInsecureRemoteHttp` is set (loopback is always allowed), matching `hermes_gateway`. Leave the flag off outside local development.
 
+## Controls in the adapter
+
+- SSRF guard: `baseUrl` hosts that are, or resolve to, loopback, private, link-local, carrier-grade NAT or metadata addresses are refused unless `allowPrivateNetwork` is set (best effort: the connection resolves the name again, so DNS rebinding is not covered).
+- Redirects are never followed, so credentials cannot travel to another host.
+- `instructionsFilePath` is read only if, after resolving symlinks, it is a `.md`, `.markdown` or `.txt` file under the Paperclip home (or the process home) and under 512 KB; anything else is skipped with a logged warning. This stops agent configuration from turning the adapter into a file-read-and-send primitive.
+- The SSE parser aborts when a frame exceeds an 8 MB buffer.
+- Remote plain http needs `dangerouslyAllowInsecureRemoteHttp`; the server password is never logged or sent in prompts.
+
 ## Required before first use
 Items 1 and 7, and a decision on 3 for each CT. Items 2 and 4 are configuration choices, not code.
 

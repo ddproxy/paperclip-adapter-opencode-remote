@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import {
   HttpOpencodeClient,
@@ -8,12 +7,19 @@ import {
   type OpencodeEvent,
 } from "../client.js";
 import { ConfigError, parseConfig, type RemoteConfig } from "../config.js";
+import { NetworkGuardError } from "../net-guard.js";
 import { buildPrompt } from "../prompt.js";
+import { readInstructionsFile } from "./instructions.js";
 
 export type ClientFactory = (cfg: RemoteConfig) => OpencodeClient;
 
 export const defaultClientFactory: ClientFactory = (cfg) =>
-  new HttpOpencodeClient({ baseUrl: cfg.baseUrl, username: cfg.username, password: cfg.serverPassword });
+  new HttpOpencodeClient({
+    baseUrl: cfg.baseUrl,
+    username: cfg.username,
+    password: cfg.serverPassword,
+    allowPrivateNetwork: cfg.allowPrivateNetwork,
+  });
 
 const CANCEL_SETTLE_MS = 5_000;
 
@@ -40,6 +46,7 @@ function failure(errorCode: string, errorMessage: string, extra: Partial<Adapter
 
 function classifyError(err: unknown): AdapterExecutionResult {
   if (err instanceof ConfigError) return failure("invalid_config", err.message);
+  if (err instanceof NetworkGuardError) return failure("blocked_network", `${err.message}. Set allowPrivateNetwork to permit private targets.`);
   if (err instanceof OpencodeUnreachableError) return failure("unreachable", err.message);
   if (err instanceof OpencodeHttpError) {
     if (err.status === 401) return failure("auth_failed", "opencode server rejected the credentials (401)");
@@ -93,7 +100,7 @@ export async function executeWithClient(
   let instructions: string | null = null;
   if (cfg.instructionsFilePath) {
     try {
-      const contents = (await readFile(cfg.instructionsFilePath, "utf8")).trim();
+      const contents = (await readInstructionsFile(cfg.instructionsFilePath)).trim();
       if (contents) {
         instructions = `${contents}\n\nThe above agent instructions were loaded from ${cfg.instructionsFilePath} on the Paperclip host; files they reference are not available on this machine.`;
         await log("stdout", `[opencode_remote] loaded agent instructions from ${cfg.instructionsFilePath}\n`);

@@ -1,3 +1,5 @@
+import { assertPublicHost } from "./net-guard.js";
+
 // All opencode server HTTP lives here so a mock can replace it and endpoint
 // corrections stay in one place. Endpoint shapes come from SPEC-opencode-api.md.
 
@@ -11,6 +13,8 @@ export interface OpencodeClientOptions {
   username: string;
   password: string;
   requestTimeoutMs?: number;
+  /** Allow loopback, private and link-local targets (default: refuse them). */
+  allowPrivateNetwork?: boolean;
 }
 
 export interface SessionCreateOptions {
@@ -56,8 +60,11 @@ export class HttpOpencodeClient implements OpencodeClient {
   private readonly authHeader: string;
   private readonly base: string;
   private readonly timeoutMs: number;
+  private readonly allowPrivate: boolean;
+  private guard: Promise<void> | null = null;
 
   constructor(opts: OpencodeClientOptions) {
+    this.allowPrivate = opts.allowPrivateNetwork === true;
     this.base = opts.baseUrl.replace(/\/+$/, "");
     this.authHeader = `Basic ${Buffer.from(`${opts.username}:${opts.password}`).toString("base64")}`;
     this.timeoutMs = opts.requestTimeoutMs ?? 30_000;
@@ -65,6 +72,11 @@ export class HttpOpencodeClient implements OpencodeClient {
 
   private async fetchRaw(path: string, init: RequestInit & { timeout?: boolean } = {}): Promise<Response> {
     const { timeout = true, ...rest } = init;
+    if (!this.allowPrivate) {
+      // Resolved once per client; the error is rethrown on every later call.
+      this.guard ??= assertPublicHost(new URL(this.base).hostname);
+      await this.guard;
+    }
     const headers = new Headers(rest.headers);
     headers.set("authorization", this.authHeader);
     if (rest.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
@@ -74,6 +86,7 @@ export class HttpOpencodeClient implements OpencodeClient {
     try {
       return await fetch(`${this.base}${path}`, {
         ...rest,
+        redirect: "error", // never follow redirects with credentials attached
         headers,
         signal: signals.length > 0 ? AbortSignal.any(signals) : undefined,
       });
@@ -164,6 +177,8 @@ export class HttpOpencodeClient implements OpencodeClient {
   }
 }
 
+const MAX_SSE_BUFFER = 8 * 1024 * 1024;
+
 export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<OpencodeEvent> {
   const decoder = new TextDecoder();
   const reader = body.getReader();
@@ -173,6 +188,7 @@ export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerato
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_SSE_BUFFER) throw new Error("SSE frame exceeds the buffer limit");
       let sep: number;
       while ((sep = buffer.search(/\r?\n\r?\n/)) !== -1) {
         const raw = buffer.slice(0, sep);

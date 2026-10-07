@@ -54,6 +54,13 @@ export function getConfigSchema(): AdapterConfigSchema {
         hint: "The remote agent needs it to call Paperclip; it is short-lived but stays in that session's history.",
       },
       {
+        key: "allowPrivateNetwork",
+        label: "Allow private network targets",
+        type: "toggle",
+        default: false,
+        hint: "Off: loopback, private, link-local and metadata addresses are refused (SSRF guard). Turn on only for a server on a private network.",
+      },
+      {
         key: "dangerouslyAllowInsecureRemoteHttp",
         label: "Dangerously allow remote HTTP",
         type: "toggle",
