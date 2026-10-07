@@ -23,6 +23,12 @@ export const defaultClientFactory: ClientFactory = (cfg) =>
 
 const CANCEL_SETTLE_MS = 5_000;
 
+function redactSecrets(text: string, secrets: Array<string | null | undefined>): string {
+  let out = text;
+  for (const secret of secrets) if (secret) out = out.split(secret).join("[redacted]");
+  return out;
+}
+
 function familyFor(code: string, message: string): AdapterExecutionResult["errorFamily"] {
   if (code === "rate_limited") {
     return /usage exceeded|quota|subscribe/i.test(message) ? "provider_quota" : "transient_upstream";
@@ -44,7 +50,12 @@ function failure(errorCode: string, errorMessage: string, extra: Partial<Adapter
   };
 }
 
-function classifyError(err: unknown): AdapterExecutionResult {
+function classifyError(err: unknown, extra: Partial<AdapterExecutionResult> = {}): AdapterExecutionResult {
+  const r = classifyErrorBase(err);
+  return { ...r, ...extra };
+}
+
+function classifyErrorBase(err: unknown): AdapterExecutionResult {
   if (err instanceof ConfigError) return failure("invalid_config", err.message);
   if (err instanceof NetworkGuardError) return failure("blocked_network", `${err.message}. Set allowPrivateNetwork to permit private targets.`);
   if (err instanceof OpencodeUnreachableError) return failure("unreachable", err.message);
@@ -117,17 +128,18 @@ export async function executeWithClient(
     adapterType: "opencode_remote",
     command: cfg.baseUrl,
     commandNotes: [`${resumed ? "Resumed" : "Created"} remote session ${sessionId}`],
-    prompt: promptText,
+    prompt: redactSecrets(promptText, [ctx.authToken, ctx.runtimeTools?.bearerToken]),
     promptMetrics: { promptChars: promptText.length, instructionsChars: instructions?.length ?? 0 },
     context: ctx.context,
   });
 
+  const sessionExtra = { sessionParams: { sessionId, baseUrl: cfg.baseUrl }, sessionDisplayId: sessionId };
   const streamAbort = new AbortController();
   let events: AsyncIterable<OpencodeEvent>;
   try {
     events = await client.subscribe(streamAbort.signal);
   } catch (err) {
-    return classifyError(err);
+    return classifyError(err, sessionExtra);
   }
 
   const state = {
@@ -268,9 +280,11 @@ export async function executeWithClient(
       } catch (err) {
         streamAbort.abort();
         await consume;
-        return classifyError(err);
+        return classifyError(err, sessionExtra);
       }
-      await finishedPromise;
+      // a timeout or abort during the POST interrupted before the prompt landed
+      if (state.cancelled || state.timedOut) await client.interrupt(sessionId).catch(() => undefined);
+      await Promise.race([finishedPromise, ...(state.cancelled || state.timedOut ? [new Promise((r) => setTimeout(r, CANCEL_SETTLE_MS))] : [])]);
     }
   } finally {
     if (timer) clearTimeout(timer);

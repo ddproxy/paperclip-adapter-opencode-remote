@@ -29,7 +29,9 @@ const BLOCKED_V4: Array<[string, number]> = [
 export function isBlockedAddress(address: string): boolean {
   const lower = address.toLowerCase();
   const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  const ip = mapped ? mapped[1] : lower;
+  const hex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  const fromHex = hex ? [parseInt(hex[1]!, 16) >> 8, parseInt(hex[1]!, 16) & 255, parseInt(hex[2]!, 16) >> 8, parseInt(hex[2]!, 16) & 255].join(".") : null;
+  const ip = mapped ? mapped[1]! : fromHex ?? lower;
   if (isIP(ip) === 4) {
     const n = ipv4ToInt(ip);
     return BLOCKED_V4.some(([base, bits]) => {

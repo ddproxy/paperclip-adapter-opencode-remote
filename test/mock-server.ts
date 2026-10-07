@@ -14,6 +14,8 @@ export interface MockServer {
   sessions: Set<string>;
   /** Events emitted on the SSE stream after each prompt. Mutate between runs. */
   script: MockEvent[];
+  /** When set, prompt POSTs fail with this HTTP status. */
+  failPrompt?: number;
   /** Emit extra events to open streams right now. */
   emit(event: MockEvent): void;
   close(): Promise<void>;
@@ -91,6 +93,7 @@ export async function startMockServer(opts: { password?: string; version?: strin
       if (!mock.sessions.has(id)) return json(res, 404, { _tag: "SessionNotFoundError" });
       if (!rest && req.method === "GET") return json(res, 200, { data: { id } });
       if (rest === "prompt" && req.method === "POST") {
+        if (mock.failPrompt) return json(res, mock.failPrompt, { error: "forced" });
         json(res, 200, { data: { id: "msg_1", sessionID: id } });
         let at = 0;
         for (const ev of mock.script) {

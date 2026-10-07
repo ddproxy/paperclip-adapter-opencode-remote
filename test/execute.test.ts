@@ -362,6 +362,24 @@ describe("compatibility with Paperclip's adapter contract", () => {
     expect(JSON.stringify(metas[0])).not.toContain(mock.password);
   });
 
+  it("redacts run and tools tokens from the reported prompt", async () => {
+    const metas: Array<Record<string, unknown>> = [];
+    const runtimeTools = { guidance: "g", mcpEndpoint: "http://x/mcp", bearerToken: "tools-secret-xyz", expiresAt: "2030-01-01" };
+    const { ctx } = makeCtx({ runtimeTools, authToken: "run-secret-abc", onMeta: async (m) => void metas.push(m as unknown as Record<string, unknown>) });
+    await executeWithClient(ctx);
+    const meta = JSON.stringify(metas[0]);
+    expect(meta).not.toContain("tools-secret-xyz");
+    expect(meta).not.toContain("run-secret-abc");
+    expect(JSON.stringify(mock.requests.find((r) => r.path.endsWith("/prompt"))?.body)).toContain("run-secret-abc");
+  });
+
+  it("keeps the session on a failed prompt so the next run can resume", async () => {
+    mock.failPrompt = 500;
+    const r = await executeWithClient(makeCtx().ctx);
+    expect(r.exitCode).toBe(1);
+    expect(r.sessionParams).toMatchObject({ sessionId: expect.any(String) });
+  });
+
   it("classifies failures into Paperclip error families", async () => {
     mock.script = [
       { type: "session.next.step.started" },
